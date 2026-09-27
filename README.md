@@ -105,6 +105,9 @@ C++ tests cover the bounded byte queue and exact query-key parsing.
 
 ## Credits and license
 
+See [acknowledgments and dependencies](ACKNOWLEDGMENTS.md) for each project's
+contribution, links to its authors, and which software is actually required.
+
 [CStoEE/pslawinski's 06088-RX ESPHome project](https://github.com/pslawinski/acurite_wx_display_esphome)
 established the display Wi-Fi replacement approach. Its older eight-value tuple
 parser and configuration are not included here; this display uses a different

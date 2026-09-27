@@ -11,6 +11,12 @@ Tested September 26, 2026 on one AcuRite Atlas 06099M and Home Assistant OS
 - **Public firmware target compile passed** with ESPHome 2026.5.3, ESP-WROOM-02.
   This compile used dummy credentials and was not flashed. Its OTA image SHA-256
   was `2fbbb530f988cb09222d8ab7f55b292864e207b1ef1a38c4de063512d702017b`.
+- **One-YAML remote package compile passed:** the documented GitHub package
+  fetched its configuration and headers automatically with ESPHome 2026.5.3.
+  The tested firmware source was `6447c14b17471e13d7697d125957065432cb5980`.
+  Dummy-credential OTA image SHA-256:
+  `d3f305fe8adb5fc09def7f4ffd4faa7c1afa6d8ca592f127a004c591aeb39a9f`.
+  This image was not flashed.
 - **GitHub CI passed**, including a Docker build of the HA app on amd64.
 - **Real HA repository installation passed:** Supervisor found the public app,
   built and installed 0.1.0, and started it with protection mode enabled, start
