@@ -1,0 +1,19 @@
+name: AcuRite Atlas Bridge
+version: 0.1.0
+slug: acurite_atlas_bridge
+description: Receive AcuRite Atlas 06099M weather through the built-in ESPHome integration.
+url: https://github.com/jackbaca/acurite-atlas-bridge
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+options:
+  device_host: acurite-display.local
+  wifi_ssid: ""
+  api_encryption_key: ""
+schema:
+  device_host: str
+  wifi_ssid: str
+  api_encryption_key: password

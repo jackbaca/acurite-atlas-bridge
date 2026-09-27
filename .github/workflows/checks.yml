@@ -1,0 +1,16 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m unittest discover -s tests
+      - run: g++ -std=c++17 -Wall -Wextra -Werror tests/test_byte_queue.cpp -o /tmp/byte-queue && /tmp/byte-queue
+      - run: g++ -std=c++17 -Wall -Wextra -Werror tests/test_weather_query.cpp -o /tmp/weather-query && /tmp/weather-query
+      - run: docker build --build-arg BUILD_ARCH=amd64 --build-arg BUILD_VERSION=0.1.0 acurite_bridge

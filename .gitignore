@@ -1,0 +1,9 @@
+.local/
+.esphome/
+__pycache__/
+.pytest_cache/
+secrets.yaml
+*.bin
+*.elf
+*.pcap
+*.pcapng

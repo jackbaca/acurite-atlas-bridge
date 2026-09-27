@@ -1,0 +1,449 @@
+# AcuRite Atlas 06099M ESP modem bridge. First installation requires the
+# ESP8266 serial programming header; the display's USB socket is not that port.
+substitutions:
+  device_name: acurite-display
+  friendly_name: AcuRite Display
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.5.3
+  project:
+    name: jackbaca.acurite-atlas-bridge
+    version: 0.1.0
+  includes:
+    - bounded_byte_queue.h
+    - uart_tcp_bridge.h
+    - weather_query.h
+
+esp8266:
+  board: esp_wroom_02
+
+logger:
+  level: INFO
+  baud_rate: 0
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  reboot_timeout: 0s
+  encryption:
+    key: !secret acurite_api_key
+  services:
+    - service: publish_upload
+      variables:
+        query: string
+      then:
+        - lambda: |-
+            if (query.size() > 4096 || !id(bridge_upload_query).empty()) return;
+            id(bridge_upload_query) = query;
+
+ota:
+  - platform: esphome
+    password: !secret acurite_ota_password
+
+uart:
+  id: display_uart
+  baud_rate: 115200
+  tx_pin: GPIO1
+  rx_pin: GPIO3
+  rx_buffer_size: 2048
+
+interval:
+  - interval: 5ms
+    then:
+      - lambda: |-
+          static acurite::UartTcpBridge bridge(id(display_uart));
+          id(uart_bridge) = &bridge;
+          bridge.poll(false);
+          auto get_param = acurite::form_value;
+
+          auto publish_query_float = [&](const std::string &query, const std::string &key, auto *sensor) {
+            std::string value = get_param(query, key);
+            if (value.empty()) return false;
+            float parsed;
+            if (!acurite::finite_float(value, parsed)) {
+              ESP_LOGW("acurite.display", "Skipping invalid numeric field: %s", key.c_str());
+              return false;
+            }
+            sensor->publish_state(parsed);
+            return true;
+          };
+
+          auto publish_query_text = [&](const std::string &query, const std::string &key, auto *sensor) {
+            std::string value = get_param(query, key);
+            if (value.empty()) return false;
+            sensor->publish_state(value);
+            return true;
+          };
+
+          auto publish_upload = [&](const std::string &query) {
+            if (!acurite::has_weather_value(query)) {
+              ESP_LOGD("acurite.display.upload", "Ignoring upload without weather fields");
+              return;
+            }
+
+            ESP_LOGI("acurite.display.upload", "Captured weather upload (%u bytes)", static_cast<unsigned>(query.size()));
+            id(atlas_display_last_payload).publish_state("Weather upload captured (raw query withheld)");
+            publish_query_text(query, "dateutc", id(atlas_display_last_upload));
+            if (!publish_query_text(query, "id", id(atlas_display_station_id))) {
+              publish_query_text(query, "ID", id(atlas_display_station_id));
+            }
+            publish_query_text(query, "sensor", id(atlas_display_sensor_id));
+            publish_query_text(query, "sensorbattery", id(atlas_display_sensor_battery));
+            publish_query_text(query, "hubbattery", id(atlas_display_hub_battery));
+
+            publish_query_float(query, "tempf", id(atlas_display_temperature));
+            publish_query_float(query, "humidity", id(atlas_display_humidity));
+            publish_query_float(query, "baromin", id(atlas_display_pressure));
+            publish_query_float(query, "windspeedmph", id(atlas_display_wind_speed));
+            publish_query_float(query, "windgustmph", id(atlas_display_wind_gust));
+            if (!publish_query_float(query, "winddir", id(atlas_display_wind_direction))) {
+              publish_query_float(query, "winddirdeg", id(atlas_display_wind_direction));
+            }
+            // Daily and hourly uploads are not a rolling 24-hour total.
+            publish_query_float(query, "dailyrainin", id(atlas_display_rain_today));
+            publish_query_float(query, "rainin", id(atlas_display_rain_past_hour));
+            publish_query_float(query, "uvindex", id(atlas_display_uv_index));
+            publish_query_float(query, "windgustdir", id(atlas_display_wind_gust_direction));
+            publish_query_float(query, "windspeedavgmph", id(atlas_display_wind_average));
+            publish_query_float(query, "lightintensity", id(atlas_display_illuminance));
+            publish_query_float(query, "measured_light_seconds", id(atlas_display_measured_light));
+            publish_query_float(query, "feelslike", id(atlas_display_feels_like));
+            publish_query_float(query, "heatindex", id(atlas_display_heat_index));
+            publish_query_float(query, "windchill", id(atlas_display_wind_chill));
+            publish_query_float(query, "rssi", id(atlas_display_signal_quality));
+            id(upload_last_ms) = millis();
+            id(upload_received) = true;
+            if (!publish_query_float(query, "dewptf", id(atlas_display_dewpoint))) {
+              publish_query_float(query, "dewpt", id(atlas_display_dewpoint));
+            }
+          };
+
+          if (!id(bridge_upload_query).empty()) {
+            std::string query;
+            query.swap(id(bridge_upload_query));
+            if (acurite::has_weather_value(query)) {
+              publish_upload(query);
+            }
+          }
+
+binary_sensor:
+  - platform: template
+    name: "Weather Upload Fresh"
+    entity_category: diagnostic
+    lambda: return id(upload_received) && static_cast<uint32_t>(millis() - id(upload_last_ms)) < 660000;
+  - platform: template
+    name: "UART Bridge Client"
+    entity_category: diagnostic
+    lambda: return id(uart_bridge) && static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->host_connected();
+
+globals:
+  - id: upload_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+  - id: upload_received
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: uart_bridge
+    type: void*
+    restore_value: no
+    initial_value: "nullptr"
+  - id: bridge_upload_query
+    type: std::string
+    restore_value: no
+
+sensor:
+  - platform: template
+    name: "Weather Upload Age"
+    unit_of_measurement: "s"
+    device_class: duration
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      if (!id(upload_received)) return NAN;
+      return static_cast<uint32_t>(millis() - id(upload_last_ms)) / 1000.0f;
+  # Compare uptime/reset reason with bridge state to identify ESP restarts.
+  - platform: uptime
+    type: seconds
+    name: "ESP Uptime"
+    update_interval: 1s
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    update_interval: 5s
+  - platform: template
+    name: "WiFi Channel"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      if (WiFi.status() != WL_CONNECTED) return NAN;
+      return static_cast<float>(WiFi.channel());
+  - platform: template
+    name: "UART Bridge RX Bytes"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      return id(uart_bridge) ? static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->uart_rx_bytes() : 0;
+  - platform: template
+    name: "UART Bridge TX Bytes"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      return id(uart_bridge) ? static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->uart_tx_bytes() : 0;
+  - platform: template
+    name: "UART Bridge Discarded Bytes"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      return id(uart_bridge) ? static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->discarded_bytes() : 0;
+  - platform: template
+    name: "UART Bridge Overflows"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      return id(uart_bridge) ? static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->overflows() : 0;
+  - platform: template
+    name: "UART Bridge Stalls"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      return id(uart_bridge) ? static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->stalls() : 0;
+  - platform: template
+    name: "UART Bridge Rejected Clients"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      return id(uart_bridge) ? static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->rejected_clients() : 0;
+  - platform: template
+    id: atlas_display_wind_direction
+    name: "Atlas Display Wind Direction"
+    unit_of_measurement: "°"
+    icon: "mdi:windsock"
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 1
+  - platform: template
+    id: atlas_display_wind_speed
+    name: "Atlas Display Wind Speed"
+    unit_of_measurement: "mph"
+    icon: "mdi:weather-windy"
+    device_class: wind_speed
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 0
+  - platform: template
+    id: atlas_display_wind_gust
+    name: "Atlas Display Wind Gust"
+    unit_of_measurement: "mph"
+    icon: "mdi:weather-windy"
+    device_class: wind_speed
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 0
+  - platform: template
+    id: atlas_display_temperature
+    name: "Atlas Display Temperature"
+    unit_of_measurement: "°F"
+    icon: "mdi:thermometer"
+    device_class: temperature
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 1
+  - platform: template
+    id: atlas_display_pressure
+    name: "Atlas Display Barometric Pressure"
+    unit_of_measurement: "inHg"
+    icon: "mdi:gauge"
+    device_class: pressure
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 2
+  - platform: template
+    id: atlas_display_dewpoint
+    name: "Atlas Display Dewpoint"
+    unit_of_measurement: "°F"
+    icon: "mdi:thermometer"
+    device_class: temperature
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 0
+  - platform: template
+    id: atlas_display_humidity
+    name: "Atlas Display Humidity"
+    unit_of_measurement: "%"
+    icon: "mdi:water-percent"
+    device_class: humidity
+    filters:
+      - timeout: 11min
+    update_interval: never
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: atlas_display_rain_today
+    name: "Atlas Display Rain Today"
+    unit_of_measurement: "in"
+    device_class: precipitation
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_rain_past_hour
+    name: "Atlas Display Rain Past Hour"
+    unit_of_measurement: "in"
+    device_class: precipitation
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_uv_index
+    name: "Atlas Display UV Index"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_wind_gust_direction
+    name: "Atlas Display Wind Gust Direction"
+    unit_of_measurement: "°"
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_wind_average
+    name: "Atlas Display Wind Average"
+    unit_of_measurement: "mph"
+    device_class: wind_speed
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_illuminance
+    name: "Atlas Display Illuminance"
+    unit_of_measurement: "lx"
+    device_class: illuminance
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_measured_light
+    name: "Atlas Display Measured Light"
+    unit_of_measurement: "s"
+    device_class: duration
+    accuracy_decimals: 0
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_feels_like
+    name: "Atlas Display Feels Like"
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_heat_index
+    name: "Atlas Display Heat Index"
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_wind_chill
+    name: "Atlas Display Wind Chill"
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+    filters:
+      - timeout: 11min
+  - platform: template
+    id: atlas_display_signal_quality
+    name: "Atlas Display Sensor Signal Quality"
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+    filters:
+      - timeout: 11min
+
+text_sensor:
+  # Actual AP identity complements channel/RSSI for the host modem responses.
+  - platform: wifi_info
+    ssid:
+      name: "WiFi SSID"
+      entity_category: diagnostic
+      disabled_by_default: true
+    bssid:
+      name: "WiFi BSSID"
+  - platform: template
+    name: "ESP Reset Reason"
+    entity_category: diagnostic
+    update_interval: 5s
+    lambda: return std::string(ESP.getResetReason().c_str());
+  - platform: template
+    name: "UART Bridge Mode"
+    entity_category: diagnostic
+    update_interval: 1s
+    lambda: |-
+      if (id(uart_bridge) && static_cast<acurite::UartTcpBridge *>(id(uart_bridge))->host_connected()) return {"host_bridge"};
+      return {"standby"};
+  - platform: template
+    id: atlas_display_last_payload
+    name: "Atlas Display Last Payload"
+  - platform: template
+    id: atlas_display_last_upload
+    name: "Atlas Display Last Upload"
+  - platform: template
+    id: atlas_display_station_id
+    name: "Atlas Display Station ID"
+  - platform: template
+    id: atlas_display_sensor_id
+    name: "Atlas Display Sensor ID"
+  - platform: template
+    id: atlas_display_sensor_battery
+    name: "Atlas Display Sensor Battery"
+  - platform: template
+    id: atlas_display_hub_battery
+    name: "Atlas Display Hub Battery"
