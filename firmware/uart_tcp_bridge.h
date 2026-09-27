@@ -38,7 +38,7 @@ class UartTcpBridge {
         client_.setTimeout(1);
         client_.keepAlive(30, 5, 3);
         pending_.clear();
-        last_progress_ms_ = millis();
+        last_progress_ms_ = esphome::millis();
         attached_ = true;
         ESP_LOGI("acurite.bridge", "Host acquired exclusive UART control");
       }
@@ -81,7 +81,7 @@ class UartTcpBridge {
       }
     }
 
-    if (pending_.size() && static_cast<uint32_t>(millis() - last_progress_ms_) > 2000) {
+    if (pending_.size() && static_cast<uint32_t>(esphome::millis() - last_progress_ms_) > 2000) {
       ++stalls_;
       ESP_LOGE("acurite.bridge", "Host stopped consuming UART; closing connection");
       release_client_(true);
@@ -100,7 +100,7 @@ class UartTcpBridge {
  private:
   void flush_pending_() {
     if (!pending_.size()) {
-      last_progress_ms_ = millis();
+      last_progress_ms_ = esphome::millis();
       return;
     }
     const int available = client_.availableForWrite();
@@ -110,7 +110,7 @@ class UartTcpBridge {
     if (count > 1024) count = 1024;
     const size_t written = client_.write(pending_.data(), count);
     pending_.consume(written);
-    if (written) last_progress_ms_ = millis();
+    if (written) last_progress_ms_ = esphome::millis();
   }
 
   void discard_uart_() {
