@@ -1,0 +1,16 @@
+{
+  "name": "acurite-atlas-bridge",
+  "version": "0.1.0",
+  "description": "Bounded ESP8266 UART bridge and weather-query helpers for AcuRite Atlas 06099M",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jackbaca/acurite-atlas-bridge.git"
+  },
+  "frameworks": "arduino",
+  "platforms": "espressif8266",
+  "build": {
+    "srcDir": "firmware",
+    "includeDir": "firmware"
+  }
+}

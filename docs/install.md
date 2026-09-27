@@ -20,9 +20,19 @@ had ESPHome installed when this bridge was tested.
    `esptool --port YOUR_SERIAL_PORT read-flash 0 0x200000 factory-backup.bin`.
    Check that the backup is exactly 2,097,152 bytes and keep its SHA-256. It may
    contain credentials; never upload it publicly.
-4. Download this repository and copy `firmware/acurite-atlas.yaml` plus the three
-   `.h` files to your ESPHome configuration directory. Add the four keys below
-   to your existing `secrets.yaml` without replacing other secrets:
+4. In ESPHome Device Builder, create a new configuration containing:
+
+   ```yaml
+   substitutions:
+     device_name: acurite-display
+     friendly_name: AcuRite Display
+
+   packages:
+     acurite: github://jackbaca/acurite-atlas-bridge/firmware/acurite-atlas.yaml@main
+   ```
+
+   The package fetches its own headers; there are no C++ files to copy. Add the
+   four keys below to your existing `secrets.yaml` without replacing other secrets:
 
    ```yaml
    wifi_ssid: "YOUR_NETWORK"
@@ -33,7 +43,7 @@ had ESPHome installed when this bridge was tested.
 
    Generate a fresh API key with `openssl rand -base64 32`. Keep the same key
    for the HA app and the ESPHome integration.
-5. In ESPHome Device Builder, validate and install `acurite-atlas.yaml`. For first
+5. In ESPHome Device Builder, validate and install your new configuration. For first
    installation use the serial adapter; for an existing compatible ESPHome device,
    use its established OTA method. ESPHome 2026.5.3 or newer is required; the
    initial target compile was tested with 2026.5.3.
