@@ -1,6 +1,7 @@
 name: AcuRite Atlas Bridge
 version: 0.1.0
 slug: acurite_atlas_bridge
+stage: experimental
 description: Receive AcuRite Atlas 06099M weather through the built-in ESPHome integration.
 url: https://github.com/jackbaca/acurite-atlas-bridge
 arch:

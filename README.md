@@ -8,7 +8,8 @@ The bridge publishes **18 numeric weather measurements and two battery statuses*
 through Home Assistant's built-in ESPHome integration, approximately every five
 minutes. It has been tested on one 06099M, including automatic updates, a host
 service restart, and stale-data expiration/recovery. This is an experimental
-release; complete display/host cold-boot recovery is still being tested.
+release; complete display/host cold-boot recovery is still being tested. See the
+[validation record](docs/validation.md) for the exact tested deployment and limits.
 
 ## What you need
 
